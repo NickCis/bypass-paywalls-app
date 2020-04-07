@@ -23,7 +23,9 @@ export interface OnRequestOptions {
   signal?: AbortSignal;
 }
 
-export interface ManagedWebView {
+export interface ManagedWebViewProps {
+  uri: string;
+  onNavigate: WebViewProps['onShouldStartLoadWithRequest'];
   onRequest: (req: Request, opts: OnRequestOptions) => Promise<void | Response>;
 }
 
@@ -49,15 +51,15 @@ async function download(url: string, opts): Promise<Response> {
 }
 
 function ManagedWebView({
-  source: initialSource,
+  uri,
   onRequest,
   userAgent = DefaultUserAgent,
   onMessage,
+  onNavigate,
   ...props
-}: ManagedWebView & WebViewProps) {
+}: ManagedWebViewProps & WebViewProps) {
   const webViewRef = useRef();
   const cookiejarRef = useRef();
-  const [uri, setURI] = useState(initialSource.uri);
   const [source, setSource] = useState({});
 
   if (!cookiejarRef.current) cookiejarRef.current = new tough.CookieJar();
@@ -130,10 +132,6 @@ function ManagedWebView({
   }
 
   useEffect(() => {
-    setURI(initialSource.uri);
-  }, [initialSource.uri]);
-
-  useEffect(() => {
     const controller = new AbortController();
     navigate(uri, { signal: controller.signal });
 
@@ -161,7 +159,6 @@ function ManagedWebView({
     } catch (e) {
       console.warn('[E] While parsing event', e, nativeEvent.data);
     }
-    // do work
     if (onMessage) onMessage(event);
   };
 
@@ -171,10 +168,10 @@ function ManagedWebView({
       source={source}
       originWhitelist={['*']}
       onMessage={handleMessage}
-      onShouldStartLoadWithRequest={(request) => {
+      onShouldStartLoadWithRequest={(request): void => {
         console.log('[I] onShouldStartLoadWithRequest', request);
         if (request.url === uri) return true;
-        setURI(request.url);
+        onNavigate(request);
         return false;
       }}
       {...props}

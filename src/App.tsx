@@ -111,7 +111,8 @@ export default function App() {
       />
       <WebView
         {...props}
-        source={{ uri }}
+        uri={uri}
+        onNavigate={request => setURI(request.url)}
         onRequest={(req) => {
           // console.log('[I] onRequest', req);
           // req.headers.cookies = '';
