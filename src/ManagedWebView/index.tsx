@@ -134,7 +134,6 @@ function ManagedWebView({
   }, [initialSource.uri]);
 
   useEffect(() => {
-    console.log('[I] navigating');
     const controller = new AbortController();
     navigate(uri, { signal: controller.signal });
 
@@ -152,7 +151,6 @@ function ManagedWebView({
       if (msg.type === 'fetch') {
         const url = new URL(msg.payload.url, source.baseUrl);
         const response = await performFetch(url.toString(), msg.payload.opts);
-        console.log('[I] response.headers', response.headers);
         const serialized = JSON.stringify(response);
         const run = `(function(){window['${msg.key}'](null, ${serialized});})(); true;`;
         webViewRef.current.injectJavaScript(run);
