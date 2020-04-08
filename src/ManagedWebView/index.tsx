@@ -6,6 +6,8 @@ import * as FileSystem from 'expo-file-system';
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+export type CookieJar = typeof tough.CookieJar;
+
 export interface Request {
   url: string;
   headers: Record<string, string>;
@@ -13,10 +15,20 @@ export interface Request {
   body?: string;
 }
 
-export interface Response {
+export interface ResponseCancel {
+  cancel: true;
+}
+
+export interface ResponseSuccess {
   status: number;
   data: string;
   headers: Record<string, string>;
+}
+
+export type Response = ResponseSuccess | ResponseCancel;
+
+function isResponseCancel(res: Response): res is ResponseCancel {
+  return (res as ResponseCancel).cancel;
 }
 
 export interface OnRequestOptions {
@@ -26,7 +38,15 @@ export interface OnRequestOptions {
 export interface ManagedWebViewProps {
   uri: string;
   onNavigate: WebViewProps['onShouldStartLoadWithRequest'];
-  onRequest: (req: Request, opts: OnRequestOptions) => Promise<void | Response>;
+  onBeforeRequest?: (
+    req: Request,
+    opts: OnRequestOptions,
+  ) => Promise<void | Response> | void | Response;
+  onCompletedRequest?: (
+    req: Request,
+    res: ResponseSuccess,
+    cookies: CookieJar,
+  ) => Promise<void> | void;
 }
 
 interface PerformFetchOptions {
@@ -52,7 +72,8 @@ async function download(url: string, opts): Promise<Response> {
 
 function ManagedWebView({
   uri,
-  onRequest,
+  onBeforeRequest = (): void => {},
+  onCompletedRequest,
   userAgent = DefaultUserAgent,
   onMessage,
   onNavigate,
@@ -92,7 +113,7 @@ function ManagedWebView({
       },
     };
     const response =
-      (await onRequest(request, { signal })) ||
+      (await onBeforeRequest(request, { signal })) ||
       (await download(request.url, {
         method: request.method,
         headers: request.headers,
@@ -101,7 +122,7 @@ function ManagedWebView({
         credentials: 'omit',
       }));
 
-    if (response.headers['set-cookie']) {
+    if (response?.headers['set-cookie']) {
       await new Promise((rs, rj) => {
         cookiejarRef.current.setCookie(
           response.headers['set-cookie'],
@@ -117,6 +138,13 @@ function ManagedWebView({
         );
       });
     }
+
+    if (onCompletedRequest && !isResponseCancel(request))
+      await onCompletedRequest(
+        request,
+        response as ResponseSuccess,
+        cookiejarRef.current,
+      );
 
     return response;
   }
@@ -149,9 +177,13 @@ function ManagedWebView({
       if (msg.type === 'fetch') {
         const url = new URL(msg.payload.url, source.baseUrl);
         const response = await performFetch(url.toString(), msg.payload.opts);
-        const serialized = JSON.stringify(response);
-        const run = `(function(){window['${msg.key}'](null, ${serialized});})(); true;`;
-        webViewRef.current.injectJavaScript(run);
+
+        // For canceled request, just do not trigger it
+        if (!isResponseCancel(response)) {
+          const serialized = JSON.stringify(response);
+          const run = `(function(){window['${msg.key}'](null, ${serialized});})(); true;`;
+          webViewRef.current.injectJavaScript(run);
+        }
       } else if (msg.type === 'console') {
         const args = JSON.parse(msg.args);
         console.log(`[WV] (${msg.method}):`, ...args);
