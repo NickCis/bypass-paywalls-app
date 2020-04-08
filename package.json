@@ -18,7 +18,8 @@
     "react-native-screens": "~2.2.0",
     "react-native-web": "~0.11.7",
     "react-native-webview": "8.1.1",
-    "tough-cookie": "^4.0.0"
+    "tough-cookie": "^4.0.0",
+    "url": "^0.11.0"
   },
   "devDependencies": {
     "@babel/core": "^7.8.6",

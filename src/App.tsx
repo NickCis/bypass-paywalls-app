@@ -315,11 +315,16 @@ export default function App() {
       <WebView
         {...props}
         uri={uri}
-        onNavigate={(request) => setURI(request.url)}
+        onNavigate={(request): void => {
+          console.log('[i] onNavigate', request);
+          setURI(request.url);
+          setText(request.url);
+        }}
         onBeforeRequest={handleBeforeRequest}
         onCompletedRequest={handleCompletedRequest}
         onLoad={({ nativeEvent }) => {
           console.log('Webkit Load:', nativeEvent);
+          setText(nativeEvent.url);
         }}
         onError={({ nativeEvent }) => {
           console.log('Webkit Error:', nativeEvent);

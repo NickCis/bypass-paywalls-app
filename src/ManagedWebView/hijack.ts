@@ -15,10 +15,24 @@ function hijack(window: any): void {
 
   function performFetch(url, opts) {
     return new Promise(function (rs, rj) {
+      let aborted = false;
       const key = `___MWV___${Math.round(Math.random() * 10000)}`;
+      const handleAbort = () => {
+        rj({ name: 'AbortError' })
+        aborted = true;
+      };
+
+      if (opts && opts.signal)
+        opts.signal.addEventListener('abort', handleAbort);
 
       window[key] = (err, data) => {
         delete window[key];
+
+        if (opts && opts.signal)
+          opts.signal.removeEventListener('abort', handleAbort);
+
+        if (aborted)
+          return;
 
         if (err) {
           rj(err);
@@ -28,6 +42,7 @@ function hijack(window: any): void {
         rs({
           ok: true,
           headers: data.headers,
+          url: data.url,
           status: data.status,
           text: () => data.data,
           json: () => JSON.parse(data.data || '""'),
@@ -58,7 +73,7 @@ function hijack(window: any): void {
       _abort: false,
       readyState: 0,
       status: 0,
-      responseType: 'text',
+      responseType: '',
       responseText: '',
       response: null,
       onreadystatechange: () => {},
@@ -66,6 +81,7 @@ function hijack(window: any): void {
       headers: {},
       abort: () => {
         xhr._abort = true;
+        xhr.onerror({ name: 'AbortError' });
       },
       setRequestHeader: (name, value) => {
         xhr.headers[`${name}`.toLowerCase()] = `${value}`;

@@ -3,6 +3,8 @@ import { WebView, WebViewProps } from 'react-native-webview';
 import tough from 'tough-cookie';
 import hijack from './hijack';
 import * as FileSystem from 'expo-file-system';
+import { resolve } from 'url';
+import normalize from '../normalize-url';
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -20,6 +22,7 @@ export interface ResponseCancel {
 }
 
 export interface ResponseSuccess {
+  url: string;
   status: number;
   data: string;
   headers: Record<string, string>;
@@ -64,6 +67,7 @@ async function download(url: string, opts): Promise<Response> {
   const res = await fetch(url, opts);
 
   return {
+    url: res.url,
     status: res.status,
     data: await res.text(),
     headers: { ...res.headers.map },
@@ -81,6 +85,7 @@ function ManagedWebView({
 }: ManagedWebViewProps & WebViewProps) {
   const webViewRef = useRef();
   const cookiejarRef = useRef();
+  const cacheSourceRef = useRef({});
   const [source, setSource] = useState({});
 
   if (!cookiejarRef.current) cookiejarRef.current = new tough.CookieJar();
@@ -118,7 +123,7 @@ function ManagedWebView({
         method: request.method,
         headers: request.headers,
         body: request.body,
-        signal,
+        ...(signal && {signal}),
         credentials: 'omit',
       }));
 
@@ -149,17 +154,31 @@ function ManagedWebView({
     return response;
   }
 
-  async function navigate(url: string, opts: OnRequestOptions) {
+  async function navigate(url: string, opts: OnRequestOptions): Promise<void> {
     const response = await performFetch(url, opts);
+
+    if (isResponseCancel(response)) return;
+
     const hijackScript = `<script>(function(w){(${hijack.toString()})(w)})(window)</script>`;
 
-    setSource({
-      baseUrl: url,
+    cacheSourceRef.current = {
+      baseUrl: response.url,
       html: response.data.replace('<head>', `<head>\n${hijackScript}`),
-    });
+    };
+
+    if (normalize(url) === normalize(response.url))
+      setSource(cacheSourceRef.current);
+    else
+      onNavigate({ url: response.url });
   }
 
   useEffect(() => {
+    if (uri === cacheSourceRef.current.baseUrl) {
+      setSource(cacheSourceRef.current);
+      cacheSourceRef.current = {};
+      return;
+    }
+
     const controller = new AbortController();
     navigate(uri, { signal: controller.signal });
 
@@ -175,14 +194,21 @@ function ManagedWebView({
       const msg = JSON.parse(nativeEvent.data);
 
       if (msg.type === 'fetch') {
-        const url = new URL(msg.payload.url, source.baseUrl);
-        const response = await performFetch(url.toString(), msg.payload.opts);
+        const url = resolve(source.baseUrl, msg.payload.url);
+        try {
+          // remove signal
+          const { signal, ...opts } = msg.payload.opts;
+          console.log(' ->', opts.method, '::', url);
+          const response = await performFetch(url, opts);
 
-        // For canceled request, just do not trigger it
-        if (!isResponseCancel(response)) {
-          const serialized = JSON.stringify(response);
-          const run = `(function(){window['${msg.key}'](null, ${serialized});})(); true;`;
-          webViewRef.current.injectJavaScript(run);
+          // For canceled request, just do not trigger it
+          if (!isResponseCancel(response)) {
+            const serialized = JSON.stringify(response);
+            const run = `(function(){window['${msg.key}'](null, ${serialized});})(); true;`;
+            webViewRef.current.injectJavaScript(run);
+          }
+        } catch (e) {
+          console.warn('[E] While fetch', e, nativeEvent.data);
         }
       } else if (msg.type === 'console') {
         const args = JSON.parse(msg.args);
@@ -202,7 +228,7 @@ function ManagedWebView({
       onMessage={handleMessage}
       onShouldStartLoadWithRequest={(request): void => {
         console.log('[I] onShouldStartLoadWithRequest', request);
-        if (request.url === uri) return true;
+        if (normalize(uri) === normalize(request.url)) return true;
         onNavigate(request);
         return false;
       }}
