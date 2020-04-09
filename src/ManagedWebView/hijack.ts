@@ -13,6 +13,128 @@ function hijack(window: any): void {
   console.warn = log('W');
   console.error = log('E');
 
+  window.__global_ctx__ = {
+    location: new Proxy(window.location, {
+      get: (target, key, receiver) => {
+        console.log('location :: get ::', key, target[key].toString());
+
+        if (target.href.includes('#'))
+          console.log('    :: pathname', target.pathname);
+
+        switch (key) {
+          case 'origin':
+            return `${window.location.protocol}//${window.location.host}`;
+          default:
+            return target[key];
+        }
+      },
+      set: (target, key, value) => {
+        console.log('location :: set ::', key, value.toString());
+        target[key] = value;
+        return true;
+      }
+    }),
+    document: new Proxy(window.document, {
+      get: (target, key, receiver) => {
+        // console.log('document :: get ::', key);
+        if ('function' === typeof target[key])
+          return target[key].bind(target);
+        switch (key) {
+          case 'location':
+            return window.__global_ctx__[key];
+          default:
+            return target[key];
+        }
+      },
+    }),
+    history: new Proxy(window.history, {
+      get: (target, key) => {
+        console.log('history :: get ::', key);
+        if (key === 'pushState') {
+          return (state, title, url) => {
+            console.log('PUSH STATE', JSON.stringify(state));
+            console.log('title', title);
+            console.log('url', url);
+            try {
+              target.pushState(state, title, url);
+            } catch (e) {
+              console.log('Push State error', e.toString());
+            }
+          };
+        }
+        if (key === 'go') {
+          // Hay que ponerse a contar, por que si va al del ppcio explota
+          return (delta) => {
+            console.log('GO', delta);
+            // target.go(delta);
+          };
+        }
+        if ('function' === typeof target[key])
+          return target[key].bind(target);
+
+        return target[key];
+      },
+    }),
+    window: new Proxy(window, {
+      get: (target, key, receiver) => {
+        // console.log('window :: get ::', key);
+        switch (key) {
+          case 'origin':
+            return window.__global_ctx__.location.origin;
+          case 'location':
+          case 'document':
+          case 'history':
+            return window.__global_ctx__[key];
+          case 'addEventListener':
+          case 'setTimeout':
+          case 'setInterval':
+          case 'clearTimeout':
+          case 'clearInterval':
+            return target[key].bind(target);
+          default:
+            return target[key];
+        }
+      },
+    }),
+  };
+
+  const documentCreateElement = window.document.createElement;
+  window.document.createElement = (tag, options) => {
+    if (tag.toLowerCase() === 'script') {
+      const script = documentCreateElement.call(window.document, 'script');
+
+      Object.defineProperty(script, 'src', {
+        get: () => undefined,
+        set: src => {
+          setTimeout(() => {
+            performFetch(src, { method: 'GET' })
+              .then(res => res.text())
+              .then(text => {
+                try {
+                  run(text);
+                } catch (e) {
+                  console.log('Failed running', src);
+                  console.log(e.toString());
+                  console.log(e.stack);
+                }
+
+                // if (data.onload) data.onload();
+                script.dispatchEvent(new Event('load'));
+              });
+          }, 10);
+        },
+      });
+
+      return script;
+    }
+
+    return documentCreateElement.call(window.document, tag, options);
+  };
+
+  function run(code) {
+    (0,eval)(`with(window.__global_ctx__){${code}}`);
+  }
+
   function performFetch(url, opts) {
     return new Promise(function (rs, rj) {
       let aborted = false;

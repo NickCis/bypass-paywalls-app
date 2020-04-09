@@ -159,7 +159,7 @@ function ManagedWebView({
 
     if (isResponseCancel(response)) return;
 
-    const hijackScript = `<script>(function(w){(${hijack.toString()})(w)})(window)</script>`;
+    const hijackScript = `<script>(function(w){(${hijack.toString()})(w)})(window);</script>`;
 
     cacheSourceRef.current = {
       baseUrl: response.url,
@@ -226,6 +226,9 @@ function ManagedWebView({
       source={source}
       originWhitelist={['*']}
       onMessage={handleMessage}
+      onNavigationStateChange={navState => {
+        console.log('[I] onNavigationStateChange', navState);
+      }}
       onShouldStartLoadWithRequest={(request): void => {
         console.log('[I] onShouldStartLoadWithRequest', request);
         if (normalize(uri) === normalize(request.url)) return true;
