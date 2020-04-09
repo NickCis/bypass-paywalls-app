@@ -50,6 +50,7 @@ export interface ManagedWebViewProps {
     res: ResponseSuccess,
     cookies: CookieJar,
   ) => Promise<void> | void;
+  debug?: boolean;
 }
 
 interface PerformFetchOptions {
@@ -61,7 +62,6 @@ interface PerformFetchOptions {
 
 export const DefaultUserAgent =
   'Mozilla/5.0 (Linux; Android 9; SM-G960F Build/PPR1.180610.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.157 Mobile Safari/537.36';
-const useFs = false;
 
 async function download(url: string, opts): Promise<Response> {
   const res = await fetch(url, opts);
@@ -81,6 +81,7 @@ function ManagedWebView({
   userAgent = DefaultUserAgent,
   onMessage,
   onNavigate,
+  debug,
   ...props
 }: ManagedWebViewProps & WebViewProps) {
   const webViewRef = useRef();
@@ -159,7 +160,7 @@ function ManagedWebView({
 
     if (isResponseCancel(response)) return;
 
-    const hijackScript = `<script>(function(w){(${hijack.toString()})(w)})(window);</script>`;
+    const hijackScript = `<script src="https://cdn.jsdelivr.net/gh/browserstate/history.js@master/scripts/bundled/html4%2Bhtml5/native.history.js"></script><script>(function(w,d){(${hijack.toString()})(w,d)})(window, ${debug});</script>`;
 
     cacheSourceRef.current = {
       baseUrl: response.url,
@@ -198,11 +199,15 @@ function ManagedWebView({
         try {
           // remove signal
           const { signal, ...opts } = msg.payload.opts;
-          console.log(' ->', opts.method, '::', url);
-          const response = await performFetch(url, opts);
 
-          // For canceled request, just do not trigger it
-          if (!isResponseCancel(response)) {
+          console.log(' =>', opts.method, '::', url);
+          const response = await performFetch(url, opts);
+          console.log(' <=', opts.method, '::', url);
+
+          if (isResponseCancel(response)) {
+            // For canceled request, just do not trigger it
+            webViewRef.current.injectJavaScript(`(function(){delete window['${msg.key}'];})(); true;`);
+          } else {
             const serialized = JSON.stringify(response);
             const run = `(function(){window['${msg.key}'](null, ${serialized});})(); true;`;
             webViewRef.current.injectJavaScript(run);
@@ -228,6 +233,10 @@ function ManagedWebView({
       onMessage={handleMessage}
       onNavigationStateChange={navState => {
         console.log('[I] onNavigationStateChange', navState);
+        // if (navState.url === 'about:blank') return;
+        // if (normalize((uri || '').replace(/#.*?$/, '')) === normalize((navState.url || '').replace(/#.*?$/, ''))) return;
+        // webViewRef.current.stopLoading();
+        // onNavigate(navState);
       }}
       onShouldStartLoadWithRequest={(request): void => {
         console.log('[I] onShouldStartLoadWithRequest', request);

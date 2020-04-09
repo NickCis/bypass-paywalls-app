@@ -1,139 +1,35 @@
-function hijack(window: any): void {
-  function log(method) {
-    return (...args) =>
-      window.ReactNativeWebView.postMessage(
-        JSON.stringify({
-          type: 'console',
-          method,
-          args: JSON.stringify(args),
-        }),
-      );
-  }
-  console.log = log('L');
-  console.warn = log('W');
-  console.error = log('E');
-
-  window.__global_ctx__ = {
-    location: new Proxy(window.location, {
-      get: (target, key, receiver) => {
-        console.log('location :: get ::', key, target[key].toString());
-
-        if (target.href.includes('#'))
-          console.log('    :: pathname', target.pathname);
-
-        switch (key) {
-          case 'origin':
-            return `${window.location.protocol}//${window.location.host}`;
-          default:
-            return target[key];
-        }
-      },
-      set: (target, key, value) => {
-        console.log('location :: set ::', key, value.toString());
-        target[key] = value;
-        return true;
-      }
-    }),
-    document: new Proxy(window.document, {
-      get: (target, key, receiver) => {
-        // console.log('document :: get ::', key);
-        if ('function' === typeof target[key])
-          return target[key].bind(target);
-        switch (key) {
-          case 'location':
-            return window.__global_ctx__[key];
-          default:
-            return target[key];
-        }
-      },
-    }),
-    history: new Proxy(window.history, {
-      get: (target, key) => {
-        console.log('history :: get ::', key);
-        if (key === 'pushState') {
-          return (state, title, url) => {
-            console.log('PUSH STATE', JSON.stringify(state));
-            console.log('title', title);
-            console.log('url', url);
-            try {
-              target.pushState(state, title, url);
-            } catch (e) {
-              console.log('Push State error', e.toString());
-            }
-          };
-        }
-        if (key === 'go') {
-          // Hay que ponerse a contar, por que si va al del ppcio explota
-          return (delta) => {
-            console.log('GO', delta);
-            // target.go(delta);
-          };
-        }
-        if ('function' === typeof target[key])
-          return target[key].bind(target);
-
-        return target[key];
-      },
-    }),
-    window: new Proxy(window, {
-      get: (target, key, receiver) => {
-        // console.log('window :: get ::', key);
-        switch (key) {
-          case 'origin':
-            return window.__global_ctx__.location.origin;
-          case 'location':
-          case 'document':
-          case 'history':
-            return window.__global_ctx__[key];
-          case 'addEventListener':
-          case 'setTimeout':
-          case 'setInterval':
-          case 'clearTimeout':
-          case 'clearInterval':
-            return target[key].bind(target);
-          default:
-            return target[key];
-        }
-      },
-    }),
-  };
-
-  const documentCreateElement = window.document.createElement;
-  window.document.createElement = (tag, options) => {
-    if (tag.toLowerCase() === 'script') {
-      const script = documentCreateElement.call(window.document, 'script');
-
-      Object.defineProperty(script, 'src', {
-        get: () => undefined,
-        set: src => {
-          setTimeout(() => {
-            performFetch(src, { method: 'GET' })
-              .then(res => res.text())
-              .then(text => {
-                try {
-                  run(text);
-                } catch (e) {
-                  console.log('Failed running', src);
-                  console.log(e.toString());
-                  console.log(e.stack);
-                }
-
-                // if (data.onload) data.onload();
-                script.dispatchEvent(new Event('load'));
-              });
-          }, 10);
-        },
-      });
-
-      return script;
+function hijack(window: any, debug: boolean): void {
+  if (debug) {
+    function log(method) {
+      return (...args) =>
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({
+            type: 'console',
+            method,
+            args: JSON.stringify(args),
+          }),
+        );
     }
+    console.log = log('L');
+    console.warn = log('W');
+    console.error = log('E');
+  }
 
-    return documentCreateElement.call(window.document, tag, options);
+  const windowHistory = window.history;
+  const history = {
+    get state() {
+      return window.History.getState();
+    },
+    pushState: (data, title, url) => window.History.pushState(data, title, url),
+    replaceState: (data, title, url) => window.History.replaceState(data, title, url),
+    back: () => window.History.back(),
+    forward: () => window.History.forward(),
+    go: delta => window.History.go(delta),
   };
 
-  function run(code) {
-    (0,eval)(`with(window.__global_ctx__){${code}}`);
-  }
+  Object.defineProperty(window, 'history', {
+    get: () => history,
+  });
 
   function performFetch(url, opts) {
     return new Promise(function (rs, rj) {
@@ -147,7 +43,12 @@ function hijack(window: any): void {
       if (opts && opts.signal)
         opts.signal.addEventListener('abort', handleAbort);
 
+      if (url.endsWith('_/graphql'))
+        console.log('--- seding request to graph ql', key);
+
       window[key] = (err, data) => {
+        if (url.endsWith('_/graphql'))
+          console.log('<=== received request to graph ql', key);
         delete window[key];
 
         if (opts && opts.signal)
@@ -167,7 +68,14 @@ function hijack(window: any): void {
           url: data.url,
           status: data.status,
           text: () => data.data,
-          json: () => JSON.parse(data.data || '""'),
+          json: () => {
+            console.log('getting json');
+            try {
+              return JSON.parse(data.data);
+            } catch (e) {
+              console.log('failed json', e.toString());
+            }
+          },
         });
       };
 
@@ -265,6 +173,129 @@ function hijack(window: any): void {
   };
 
   window.XMLHttpRequest.DONE = OriginalXMLHttpRequest.DONE;
+
+  if (debug) {
+    function run(code) {
+      (0,eval)(`with(window.__global_ctx__){${code}}`);
+    }
+
+    window.__global_ctx__ = {
+      location: new Proxy(window.location, {
+        get: (target, key, receiver) => {
+          console.log('location :: get ::', key, target[key].toString());
+
+          if (target.href.includes('#'))
+            console.log('    :: pathname', target.pathname);
+
+          switch (key) {
+            case 'origin':
+              return `${window.location.protocol}//${window.location.host}`;
+            default:
+              return target[key];
+          }
+        },
+        set: (target, key, value) => {
+          console.log('location :: set ::', key, value.toString());
+          target[key] = value;
+          return true;
+        }
+      }),
+      document: new Proxy(window.document, {
+        get: (target, key, receiver) => {
+          // console.log('document :: get ::', key);
+          if ('function' === typeof target[key])
+            return target[key].bind(target);
+          switch (key) {
+            case 'location':
+              return window.__global_ctx__[key];
+            default:
+              return target[key];
+          }
+        },
+      }),
+      history: new Proxy(window.history, {
+        get: (target, key) => {
+          console.log('history :: get ::', key);
+          if (key === 'pushState') {
+            return (state, title, url) => {
+              console.log('PUSH STATE', JSON.stringify(state));
+              console.log('title', title);
+              console.log('url', url);
+              try {
+                target.pushState(state, title, url);
+              } catch (e) {
+                console.log('Push State error', e.toString());
+              }
+            };
+          }
+          if (key === 'go') {
+            // Hay que ponerse a contar, por que si va al del ppcio explota
+            return (delta) => {
+              console.log('GO', delta);
+              target.go(delta);
+            };
+          }
+          if ('function' === typeof target[key])
+            return target[key].bind(target);
+
+          return target[key];
+        },
+      }),
+      window: new Proxy(window, {
+        get: (target, key, receiver) => {
+          // console.log('window :: get ::', key);
+          switch (key) {
+            case 'origin':
+              return window.__global_ctx__.location.origin;
+            case 'location':
+            case 'document':
+            case 'history':
+              return window.__global_ctx__[key];
+            case 'addEventListener':
+            case 'setTimeout':
+            case 'setInterval':
+            case 'clearTimeout':
+            case 'clearInterval':
+              return target[key].bind(target);
+            default:
+              return target[key];
+          }
+        },
+      }),
+    };
+
+    const documentCreateElement = window.document.createElement;
+    window.document.createElement = (tag, options) => {
+      if (tag.toLowerCase() === 'script') {
+        const script = documentCreateElement.call(window.document, 'script');
+
+        Object.defineProperty(script, 'src', {
+          get: () => undefined,
+          set: src => {
+            setTimeout(() => {
+              performFetch(src, { method: 'GET' })
+                .then(res => res.text())
+                .then(text => {
+                  try {
+                    run(text);
+                  } catch (e) {
+                    console.log('Failed running', src);
+                    console.log(e.toString());
+                    console.log(e.stack);
+                  }
+
+                  script.dispatchEvent(new Event('load'));
+                });
+            }, 10);
+          },
+        });
+
+        return script;
+      }
+
+      return documentCreateElement.call(window.document, tag, options);
+    };
+  }
 }
 
 export default hijack;

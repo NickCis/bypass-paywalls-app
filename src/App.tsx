@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AppLoading } from 'expo';
-import { SafeAreaView, StyleSheet, View, TextInput } from 'react-native';
-// import { WebView } from 'react-native-webview';
+import { StyleSheet, View, TextInput } from 'react-native';
+import { SearchBar } from 'react-native-elements';
+import Constants from "expo-constants";
 import WebView, {
   Request,
   Response,
@@ -304,16 +305,16 @@ export default function App() {
 
   return (
     <View style={styles.wrapper}>
-      <TextInput
-        style={styles.input}
-        placeholder="Url"
+      <SearchBar
         autoCorrect={false}
         onChangeText={(text) => setText(text)}
         onSubmitEditing={() => setURI(text.toLowerCase())}
+        lightTheme={true}
         value={text}
       />
       <WebView
         {...props}
+        debug={true}
         uri={uri}
         onNavigate={(request): void => {
           console.log('[i] onNavigate', request);
@@ -323,7 +324,7 @@ export default function App() {
         onBeforeRequest={handleBeforeRequest}
         onCompletedRequest={handleCompletedRequest}
         onLoad={({ nativeEvent }) => {
-          console.log('Webkit Load:', nativeEvent);
+          // console.log('Webkit Load:', nativeEvent);
           setText(nativeEvent.url);
         }}
         onError={({ nativeEvent }) => {
@@ -339,11 +340,7 @@ const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
     backgroundColor: '#fff',
-  },
-  input: {
-    height: 80,
-    borderColor: 'grey',
-    borderWidth: 1,
+    paddingTop: Constants.statusBarHeight,
   },
   webview: {},
 });
