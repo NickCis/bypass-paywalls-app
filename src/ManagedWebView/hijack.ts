@@ -15,17 +15,47 @@ function hijack(window: any, debug: boolean): void {
     console.error = log('E');
   }
 
+  let currentState = 0;
+  const initialUrl = window.location.href;
   const windowHistory = window.history;
-  const history = {
-    get state() {
-      return window.History.getState();
+  const history = new Proxy(windowHistory, {
+    get: (target, key, receiver) => {
+      switch (key) {
+        case 'back':
+          return () => receiver.go(-1);
+
+        case 'forward':
+          return () => receiver.go(1);
+
+        case 'pushState':
+          return (state, title, url) => {
+            currentState++;
+            target.pushState(state, title, url);
+          };
+
+        case 'go':
+          return (delta) => {
+            currentState += delta;
+
+            if (currentState <= 0) {
+              curentState = 0;
+              window.history.replaceState(null, '', initialUrl);
+              return;
+            }
+
+            target.go(delta);
+          };
+
+        default:
+          break;
+      }
+
+      if ('function' === typeof target[key])
+        return target[key].bind(target);
+
+      return target[key];
     },
-    pushState: (data, title, url) => window.History.pushState(data, title, url),
-    replaceState: (data, title, url) => window.History.replaceState(data, title, url),
-    back: () => window.History.back(),
-    forward: () => window.History.forward(),
-    go: delta => window.History.go(delta),
-  };
+  })
 
   Object.defineProperty(window, 'history', {
     get: () => history,
@@ -184,9 +214,6 @@ function hijack(window: any, debug: boolean): void {
         get: (target, key, receiver) => {
           console.log('location :: get ::', key, target[key].toString());
 
-          if (target.href.includes('#'))
-            console.log('    :: pathname', target.pathname);
-
           switch (key) {
             case 'origin':
               return `${window.location.protocol}//${window.location.host}`;
@@ -213,34 +240,7 @@ function hijack(window: any, debug: boolean): void {
           }
         },
       }),
-      history: new Proxy(window.history, {
-        get: (target, key) => {
-          console.log('history :: get ::', key);
-          if (key === 'pushState') {
-            return (state, title, url) => {
-              console.log('PUSH STATE', JSON.stringify(state));
-              console.log('title', title);
-              console.log('url', url);
-              try {
-                target.pushState(state, title, url);
-              } catch (e) {
-                console.log('Push State error', e.toString());
-              }
-            };
-          }
-          if (key === 'go') {
-            // Hay que ponerse a contar, por que si va al del ppcio explota
-            return (delta) => {
-              console.log('GO', delta);
-              target.go(delta);
-            };
-          }
-          if ('function' === typeof target[key])
-            return target[key].bind(target);
-
-          return target[key];
-        },
-      }),
+      history: window.history,
       window: new Proxy(window, {
         get: (target, key, receiver) => {
           // console.log('window :: get ::', key);

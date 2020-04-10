@@ -314,7 +314,6 @@ export default function App() {
       />
       <WebView
         {...props}
-        debug={true}
         uri={uri}
         onNavigate={(request): void => {
           console.log('[i] onNavigate', request);

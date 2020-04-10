@@ -160,7 +160,7 @@ function ManagedWebView({
 
     if (isResponseCancel(response)) return;
 
-    const hijackScript = `<script src="https://cdn.jsdelivr.net/gh/browserstate/history.js@master/scripts/bundled/html4%2Bhtml5/native.history.js"></script><script>(function(w,d){(${hijack.toString()})(w,d)})(window, ${debug});</script>`;
+    const hijackScript = `<script>(function(w,d){(${hijack.toString()})(w,d)})(window, ${debug});</script>`;
 
     cacheSourceRef.current = {
       baseUrl: response.url,
@@ -200,9 +200,9 @@ function ManagedWebView({
           // remove signal
           const { signal, ...opts } = msg.payload.opts;
 
-          console.log(' =>', opts.method, '::', url);
+          debug && console.log(' =>', opts.method, '::', url);
           const response = await performFetch(url, opts);
-          console.log(' <=', opts.method, '::', url);
+          debug && console.log(' <=', opts.method, '::', url);
 
           if (isResponseCancel(response)) {
             // For canceled request, just do not trigger it
@@ -213,7 +213,7 @@ function ManagedWebView({
             webViewRef.current.injectJavaScript(run);
           }
         } catch (e) {
-          console.warn('[E] While fetch', e, nativeEvent.data);
+          debug && console.warn('[E] While fetch', e, nativeEvent.data);
         }
       } else if (msg.type === 'console') {
         const args = JSON.parse(msg.args);
@@ -231,15 +231,15 @@ function ManagedWebView({
       source={source}
       originWhitelist={['*']}
       onMessage={handleMessage}
-      onNavigationStateChange={navState => {
-        console.log('[I] onNavigationStateChange', navState);
-        // if (navState.url === 'about:blank') return;
-        // if (normalize((uri || '').replace(/#.*?$/, '')) === normalize((navState.url || '').replace(/#.*?$/, ''))) return;
-        // webViewRef.current.stopLoading();
-        // onNavigate(navState);
-      }}
+      // onNavigationStateChange={navState => {
+      //   console.log('[I] onNavigationStateChange', navState);
+      //   if (navState.url === 'about:blank') return;
+      //   if (normalize((uri || '').replace(/#.*?$/, '')) === normalize((navState.url || '').replace(/#.*?$/, ''))) return;
+      //   webViewRef.current.stopLoading();
+      //   onNavigate(navState);
+      // }}
       onShouldStartLoadWithRequest={(request): void => {
-        console.log('[I] onShouldStartLoadWithRequest', request);
+        debug && console.log('[I] onShouldStartLoadWithRequest', request);
         if (normalize(uri) === normalize(request.url)) return true;
         onNavigate(request);
         return false;
