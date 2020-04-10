@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { WebView, WebViewProps } from 'react-native-webview';
 import tough from 'tough-cookie';
 import hijack from './hijack';
@@ -83,7 +83,7 @@ function ManagedWebView({
   onNavigate,
   debug,
   ...props
-}: ManagedWebViewProps & WebViewProps) {
+}: ManagedWebViewProps & WebViewProps, ref) {
   const webViewRef = useRef();
   const cookiejarRef = useRef();
   const cacheSourceRef = useRef({});
@@ -188,6 +188,13 @@ function ManagedWebView({
     };
   }, [uri]);
 
+  useImperativeHandle(ref, () => ({
+    get webview() {
+      return webViewRef.current
+    },
+    navigate,
+  }));
+
   const handleMessage = async (event) => {
     const { nativeEvent } = event;
 
@@ -249,4 +256,4 @@ function ManagedWebView({
   );
 }
 
-export default ManagedWebView;
+export default forwardRef(ManagedWebView);

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { AppLoading } from 'expo';
-import { StyleSheet, View, TextInput } from 'react-native';
+import { StyleSheet, View, TextInput, BackHandler } from 'react-native';
 import { SearchBar } from 'react-native-elements';
 import Constants from "expo-constants";
 import WebView, {
@@ -271,6 +271,18 @@ export default function App() {
   const [text, setText] = useState('url');
   const [contentScript, setContentScript] = useState('url');
   const [uri, setURI] = useState('https://www.google.com/');
+  const webviewRef = useRef();
+
+  useEffect(() => {
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      webviewRef.current.webview.goBack();
+      return true;
+    });
+
+    return () => {
+      handler.remove();
+    };
+  }, []);
 
   if (state === 'loading') {
     return (
@@ -314,6 +326,7 @@ export default function App() {
       />
       <WebView
         {...props}
+        ref={webviewRef}
         uri={uri}
         onNavigate={(request): void => {
           console.log('[i] onNavigate', request);

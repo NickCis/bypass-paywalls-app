@@ -3,8 +3,11 @@
     "privacy": "public",
     "name": "bypass-paywalls-app",
     "slug": "bypass-paywalls-app",
+    "description": "Bypass Paywalls for expo",
+    "githubUrl": "https://github.com/NickCis/bypass-paywalls-app",
+    "scheme": "bypass-paywalls",
     "platforms": ["ios", "android"],
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon-512.png",
     "splash": {
