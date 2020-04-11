@@ -216,8 +216,7 @@ const normalizeUrl = (urlString, options) => {
 
   const searchParamsString = searchParams.toString();
 
-  if (searchParamsString)
-    urlObj.search = `?${searchParamsString}`;
+  if (searchParamsString) urlObj.search = `?${searchParamsString}`;
 
   // Take advantage of many of the Node `url` normalizations
   urlString = url.format(urlObj);

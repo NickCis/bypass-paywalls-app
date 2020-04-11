@@ -7,7 +7,7 @@
     "githubUrl": "https://github.com/NickCis/bypass-paywalls-app",
     "scheme": "bypass-paywalls",
     "platforms": ["ios", "android"],
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon-512.png",
     "splash": {

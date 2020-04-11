@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { AppLoading } from 'expo';
 import { StyleSheet, View, TextInput, BackHandler } from 'react-native';
 import { SearchBar } from 'react-native-elements';
-import Constants from "expo-constants";
+import Constants from 'expo-constants';
 import WebView, {
   Request,
   Response,
@@ -69,7 +69,7 @@ const blockedRegexes = [
   /thenation\.com\/.+\/paywall-script\.php/,
   /haaretz\.co\.il\/htz\/js\/inter\.js/,
   /nzherald\.co\.nz\/.+\/headjs\/.+\.js/,
-  /(.+\.tinypass\.com\/.+|economist\.com\/_next\/static\/runtime\/main.+\.js)/,
+  /(.+\.tinypass\.com\/.+|economist\.com\/_next\/static\/runtime\/main.+\.js|service\.maxymiser\.net\/cdn\/economist)/,
   /.+\.tinypass\.com\/.+/,
   /meter\.bostonglobe\.com\/js\/.+/,
   /.+\.tinypass\.com\/.+/,
@@ -320,7 +320,14 @@ export default function App() {
       <SearchBar
         autoCorrect={false}
         onChangeText={(text) => setText(text)}
-        onSubmitEditing={() => setURI(text.toLowerCase())}
+        onSubmitEditing={() => {
+          let normalText = text.trim();
+          if (!normalText.match(/^https?:\/\//i)) {
+            normalText = `https://${normalText}`;
+            setText(normalText);
+          }
+          setURI(normalText);
+        }}
         lightTheme={true}
         value={text}
       />
@@ -330,8 +337,10 @@ export default function App() {
         uri={uri}
         onNavigate={(request): void => {
           console.log('[i] onNavigate', request);
-          setURI(request.url);
-          setText(request.url);
+          const url = request.mainDocumentURL || request.url;
+          if (url === 'about:blank') return;
+          setURI(url);
+          setText(url);
         }}
         onBeforeRequest={handleBeforeRequest}
         onCompletedRequest={handleCompletedRequest}

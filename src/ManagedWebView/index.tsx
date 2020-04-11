@@ -1,4 +1,10 @@
-import React, { useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+} from 'react';
 import { WebView, WebViewProps } from 'react-native-webview';
 import tough from 'tough-cookie';
 import hijack from './hijack';
@@ -74,20 +80,26 @@ async function download(url: string, opts): Promise<Response> {
   };
 }
 
-function ManagedWebView({
-  uri,
-  onBeforeRequest = (): void => {},
-  onCompletedRequest,
-  userAgent = DefaultUserAgent,
-  onMessage,
-  onNavigate,
-  debug,
-  ...props
-}: ManagedWebViewProps & WebViewProps, ref) {
+function ManagedWebView(
+  {
+    uri,
+    onBeforeRequest = (): void => {},
+    onCompletedRequest,
+    userAgent = DefaultUserAgent,
+    onMessage,
+    onNavigate,
+    debug,
+    ...props
+  }: ManagedWebViewProps & WebViewProps,
+  ref,
+) {
   const webViewRef = useRef();
   const cookiejarRef = useRef();
   const cacheSourceRef = useRef({});
-  const [source, setSource] = useState({});
+  const [source, setSource] = useState({
+    baseUrl: '',
+    html: '',
+  });
 
   if (!cookiejarRef.current) cookiejarRef.current = new tough.CookieJar();
 
@@ -124,11 +136,11 @@ function ManagedWebView({
         method: request.method,
         headers: request.headers,
         body: request.body,
-        ...(signal && {signal}),
+        ...(signal && { signal }),
         credentials: 'omit',
       }));
 
-    if (response?.headers['set-cookie']) {
+    if (response.headers && response.headers['set-cookie']) {
       await new Promise((rs, rj) => {
         cookiejarRef.current.setCookie(
           response.headers['set-cookie'],
@@ -169,8 +181,7 @@ function ManagedWebView({
 
     if (normalize(url) === normalize(response.url))
       setSource(cacheSourceRef.current);
-    else
-      onNavigate({ url: response.url });
+    else onNavigate({ url: response.url });
   }
 
   useEffect(() => {
@@ -190,7 +201,7 @@ function ManagedWebView({
 
   useImperativeHandle(ref, () => ({
     get webview() {
-      return webViewRef.current
+      return webViewRef.current;
     },
     navigate,
   }));
@@ -209,11 +220,20 @@ function ManagedWebView({
 
           debug && console.log(' =>', opts.method, '::', url);
           const response = await performFetch(url, opts);
-          debug && console.log(' <=', opts.method, '::', url);
+          debug &&
+            console.log(
+              ' <=',
+              opts.method,
+              '::',
+              url,
+              response.cancel ? '[CANCEL]' : '',
+            );
 
-          if (isResponseCancel(response)) {
+          if (isResponseCancel(response) && !msg.payload?.extra?.script) {
             // For canceled request, just do not trigger it
-            webViewRef.current.injectJavaScript(`(function(){delete window['${msg.key}'];})(); true;`);
+            webViewRef.current.injectJavaScript(
+              `(function(){delete window['${msg.key}'];})(); true;`,
+            );
           } else {
             const serialized = JSON.stringify(response);
             const run = `(function(){window['${msg.key}'](null, ${serialized});})(); true;`;
@@ -246,8 +266,9 @@ function ManagedWebView({
       //   onNavigate(navState);
       // }}
       onShouldStartLoadWithRequest={(request): void => {
-        debug && console.log('[I] onShouldStartLoadWithRequest', request);
-        if (normalize(uri) === normalize(request.url)) return true;
+        /* debug && */ console.log('[I] onShouldStartLoadWithRequest', request);
+        const url = request.mainDocumentURL || request.url;
+        if (normalize(uri) === normalize(url)) return true;
         onNavigate(request);
         return false;
       }}

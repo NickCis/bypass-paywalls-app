@@ -50,44 +50,39 @@ function hijack(window: any, debug: boolean): void {
           break;
       }
 
-      if ('function' === typeof target[key])
-        return target[key].bind(target);
+      if ('function' === typeof target[key]) return target[key].bind(target);
 
       return target[key];
     },
-  })
+  });
 
   Object.defineProperty(window, 'history', {
     get: () => history,
   });
 
-  function performFetch(url, opts) {
+  function performFetch(url, opts, extra) {
     return new Promise(function (rs, rj) {
       let aborted = false;
       const key = `___MWV___${Math.round(Math.random() * 10000)}`;
       const handleAbort = () => {
-        rj({ name: 'AbortError' })
+        rj({ name: 'AbortError' });
         aborted = true;
       };
 
       if (opts && opts.signal)
         opts.signal.addEventListener('abort', handleAbort);
 
-      if (url.endsWith('_/graphql'))
-        console.log('--- seding request to graph ql', key);
-
       window[key] = (err, data) => {
-        if (url.endsWith('_/graphql'))
-          console.log('<=== received request to graph ql', key);
         delete window[key];
 
         if (opts && opts.signal)
           opts.signal.removeEventListener('abort', handleAbort);
 
-        if (aborted)
+        if (aborted) {
           return;
+        }
 
-        if (err) {
+        if (err || data.cancel) {
           rj(err);
           return;
         }
@@ -99,12 +94,7 @@ function hijack(window: any, debug: boolean): void {
           status: data.status,
           text: () => data.data,
           json: () => {
-            console.log('getting json');
-            try {
-              return JSON.parse(data.data);
-            } catch (e) {
-              console.log('failed json', e.toString());
-            }
+            return JSON.parse(data.data);
           },
         });
       };
@@ -115,6 +105,7 @@ function hijack(window: any, debug: boolean): void {
           payload: {
             url,
             opts,
+            extra,
           },
           key,
         }),
@@ -204,9 +195,72 @@ function hijack(window: any, debug: boolean): void {
 
   window.XMLHttpRequest.DONE = OriginalXMLHttpRequest.DONE;
 
+  function insertScript(text, src) {
+    const script = document.createElement('script');
+    script.setAttribute('data-x-no-block', true);
+    script.innerText = text;
+    (document.body || document.head || document.documentElement).appendChild(
+      script,
+    );
+  }
+
+  let last = new Promise((rs) => {
+    window.addEventListener('load', () => rs());
+  });
+
+  function insertScriptInOrder(p, src) {
+    last = last.then(() =>
+      p
+        .then((text) => {
+          if (text) insertScript(text, src);
+        })
+        .catch((e) => {}),
+    );
+  }
+
+  function loadScript(src, text, defer) {
+    const p = text
+      ? Promise.resolve(text)
+      : performFetch(src, { method: 'GET' }, { script: true })
+          .then((res) => res.text())
+          .catch((e) => {});
+
+    src = src || 'inline';
+
+    if (defer) {
+      p.then((text) => insertScript(text, src));
+    } else {
+      insertScriptOrder(p, src);
+    }
+  }
+
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach(({ addedNodes }) => {
+      addedNodes.forEach((node) => {
+        if (node.nodeType === 1 && node.tagName === 'SCRIPT') {
+          const noblock = node.getAttribute('data-x-no-block');
+          if (!noblock) {
+            node.type = 'javascript/blocked';
+            loadScript(
+              node.src || node.getAttribute('id'),
+              node.textContent,
+              node.getAttribute('defer') || node.getAttribute('async'),
+            );
+            node.parentElement.removeChild(node);
+          }
+        }
+      });
+    });
+  });
+
+  observer.observe(document, {
+    childList: true,
+    subtree: true,
+  });
+
   if (debug) {
     function run(code) {
-      (0,eval)(`with(window.__global_ctx__){${code}}`);
+      (0, eval)(`with(window.__global_ctx__){${code}}`);
     }
 
     window.__global_ctx__ = {
@@ -225,7 +279,7 @@ function hijack(window: any, debug: boolean): void {
           console.log('location :: set ::', key, value.toString());
           target[key] = value;
           return true;
-        }
+        },
       }),
       document: new Proxy(window.document, {
         get: (target, key, receiver) => {
@@ -271,11 +325,11 @@ function hijack(window: any, debug: boolean): void {
 
         Object.defineProperty(script, 'src', {
           get: () => undefined,
-          set: src => {
+          set: (src) => {
             setTimeout(() => {
               performFetch(src, { method: 'GET' })
-                .then(res => res.text())
-                .then(text => {
+                .then((res) => res.text())
+                .then((text) => {
                   try {
                     run(text);
                   } catch (e) {
