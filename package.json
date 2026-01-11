@@ -9,7 +9,7 @@
     "format": "prettier --write '{src,scripts,migrations}/**/*.{js,ts,tsx}' App.tsx app.json"
   },
   "dependencies": {
-    "expo": "~37.0.3",
+    "expo": "~48.0.0",
     "expo-asset": "~8.1.3",
     "expo-file-system": "~8.1.0",
     "react": "~16.9.0",
